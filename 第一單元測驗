@@ -9,10 +9,14 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 
 let app, auth, db;
 if (firebaseConfig) {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-}
+  apiKey: "AIzaSyACDrk1dsuanGA_JndMLG3__behOQWtQsk",
+  authDomain: "science-grade4.firebaseapp.com",
+  projectId: "science-grade4",
+  storageBucket: "science-grade4.firebasestorage.app",
+  messagingSenderId: "147212829664",
+  appId: "1:147212829664:web:39ea5b3afa4501ff036185"
+};
+
 
 // 活動 1：地表物質有什麼 (擴充題庫)
 const activity1Data = [
