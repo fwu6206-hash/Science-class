@@ -1,0 +1,936 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Trophy, Home, ArrowRight, Download, CheckCircle, XCircle, Rocket, Shield, BookOpen } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+let app, auth, db;
+if (firebaseConfig) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+}
+
+// 活動 1：地表物質有什麼 (擴充題庫)
+const activity1Data = [
+    { id: 1, type: 'tf', question: "【觀念題】地球表面只包含「生物」（如動植物），水和空氣不屬於地表環境的一部分。", answer: false, image: "🌍" },
+    { id: 101, type: 'tf', question: "【觀念題】生物生存必須依靠空氣、水等非生物物質，且不同的動植物適合生長在不同的環境中。", answer: true, image: "🌱" },
+    { id: 102, type: 'tf', question: "【觀念題】土壤完全是由純岩石碎屑組成的，裡面不含有任何水分、空氣或腐植質。", answer: false, image: "🤎" },
+    { id: 103, type: 'tf', question: "【觀念題】大樹的根可以伸進岩石裂縫中，這代表岩石也是植物生長的環境之一。", answer: true, image: "🌳" },
+    { id: 104, type: 'tf', question: "【觀念題】只要有水，任何植物都可以生長在海邊的沙灘上。", answer: false, image: "🏖️" },
+    { id: 105, type: 'tf', question: "【觀念題】岩石碎裂後顆粒最大的是礫石，顆粒最小的是土壤。", answer: true, image: "🪨" },
+    
+    { id: 2, type: 'mcq', question: "下列哪一個「不是」地表環境中的非生物？", options: ["空氣", "岩石", "大樹", "水"], answer: 2 },
+    { id: 3, type: 'mcq', question: "岩石、沙和土壤，哪一種物質的顆粒最小，摸起來細細粉粉的？", options: ["岩石", "沙", "土壤", "礫石"], answer: 2 },
+    { id: 4, type: 'mcq', question: "岩石碎裂後，顆粒最大，摸起來粗粗的是什麼？", options: ["泥土", "沙子", "土壤", "礫石"], answer: 3 },
+    { id: 6, type: 'mcq', question: "把招潮蟹抓到高山的岩石上，牠還能生長得好嗎？", options: ["可以，因為牠適應力強", "不行，生物會選擇合適的環境", "可以，高山空氣比較好", "看天氣決定"], answer: 1 },
+    { id: 8, type: 'mcq', question: "蒲公英的根可以伸進哪裡生長？", options: ["岩石裂縫裡", "天空中", "火裡面", "深海中"], answer: 0 },
+    { id: 106, type: 'mcq', question: "為什麼蚯蚓喜歡生活在土壤中？", options: ["土壤裡有食物和水分", "土壤可以躲避陽光", "土壤比較隱蔽", "以上皆是"], answer: 3 },
+    { id: 107, type: 'mcq', question: "仙人掌適合生長在什麼樣的環境？", options: ["多雨的雨林", "乾燥的沙漠", "寒冷的極地", "深深的海底"], answer: 1 },
+    { id: 108, type: 'mcq', question: "哪一種地表物質最適合用來種植蔬菜？", options: ["堅硬的岩石", "海邊的沙子", "肥沃的土壤", "碎裂的礫石"], answer: 2 },
+    { id: 109, type: 'mcq', question: "觀察土壤時，可以用什麼工具幫助我們看得更清楚？", options: ["望遠鏡", "放大鏡", "顯微鏡", "老花眼鏡"], answer: 1 },
+    { id: 110, type: 'mcq', question: "將水倒入裝滿土壤的盆子裡，水會怎樣？", options: ["完全不會往下流", "會很快流光", "會慢慢滲入土壤中", "會變成冰塊"], answer: 2 },
+    { id: 111, type: 'mcq', question: "臺灣獼猴適合生活在什麼環境？", options: ["高山上的針葉林", "低海拔的森林", "海邊的沙灘", "都市的馬路上"], answer: 1 },
+    { id: 112, type: 'mcq', question: "水稻喜歡生長在什麼樣的環境？", options: ["乾燥的沙地", "有很多水的水田", "高高的岩石上", "寒冷的雪地"], answer: 1 },
+    { id: 113, type: 'mcq', question: "下列哪一項是植物生長所「不需要」的？", options: ["陽光", "空氣", "水", "塑膠袋"], answer: 3 },
+    { id: 114, type: 'mcq', question: "沙灘上的沙子，主要是由什麼東西碎裂而成的？", options: ["貝殼", "塑膠", "岩石", "樹木"], answer: 2 },
+    { id: 115, type: 'mcq', question: "大樹的根深深扎在泥土裡，泥土對大樹有什麼功用？", options: ["提供水分和養分", "固定大樹", "以上皆是", "沒有任何功用"], answer: 2 },
+    
+    { id: 5, type: 'matching', question: "請將生物與牠們適合生存的環境連起來：", left: [{id:'l1', text:'西瓜'}, {id:'l2', text:'水稻'}, {id:'l3', text:'招潮蟹'}], right: [{id:'r1', text:'有點黏性的溼潤土壤', match:'l2'}, {id:'r2', text:'鬆軟的海濱泥灘地', match:'l3'}, {id:'r3', text:'鬆散、排水性好的沙地', match:'l1'}] },
+    { id: 9, type: 'matching', question: "請將地表物質與其生活應用配對：", left: [{id:'l1', text:'堅硬岩塊'}, {id:'l2', text:'肥沃土壤'}, {id:'l3', text:'沙子'}], right: [{id:'r1', text:'拌進水泥蓋房子', match:'l3'}, {id:'r2', text:'種植農作物', match:'l2'}, {id:'r3', text:'鋪設步道', match:'l1'}] },
+    { id: 116, type: 'matching', question: "請將動物與牠們的棲息地連起來：", left: [{id:'l1', text:'企鵝'}, {id:'l2', text:'駱駝'}, {id:'l3', text:'黑熊'}], right: [{id:'r1', text:'乾燥的沙漠', match:'l2'}, {id:'r2', text:'寒冷的冰原', match:'l1'}, {id:'r3', text:'茂密的森林', match:'l3'}] },
+    
+    { id: 7, type: 'combination', question: "請依照地表物質的顆粒大小，由「大到小」依序排列：", options: ["沙", "礫石", "土壤"], answer: [1, 0, 2] },
+    { id: 117, type: 'combination', question: "請將下列生物依照體型由「小到大」排列：", options: ["麻雀", "螞蟻", "大象"], answer: [1, 0, 2] },
+    { id: 118, type: 'combination', question: "植物生長需要的條件，請選出三個最重要的並排列(請依序選出水、陽光、空氣)：", options: ["電視", "水", "陽光", "空氣"], answer: [1, 2, 3] }
+];
+
+// 活動 2：地表環境會變動嗎 (擴充題庫)
+const activity2Data = [
+    { id: 1, type: 'tf', question: "【觀念題】地表環境是永遠固定不變的，大自然的風和流水無法改變地表的形貌。", answer: false, image: "🌊" },
+    { id: 7, type: 'tf', question: "【觀念題】除了自然力量外，人類過度開發山坡地也會造成地表劇烈變動，甚至引發災難。", answer: true, image: "⚠️" },
+    { id: 201, type: 'tf', question: "【觀念題】流水具有侵蝕（沖刷）、搬運（帶走）、堆積（放下）三種作用，會改變河川的樣貌。", answer: true, image: "🏞️" },
+    { id: 202, type: 'tf', question: "【觀念題】海邊的消波塊是自然產生的岩石，用來抵擋海浪侵蝕。", answer: false, image: "🌊" },
+    { id: 203, type: 'tf', question: "【觀念題】在河川上游，水流速度通常最快，侵蝕作用最明顯。", answer: true, image: "⛰️" },
+    { id: 204, type: 'tf', question: "【觀念題】為了防範土石流，我們應該在山坡地大量砍伐樹木，改種高麗菜。", answer: false, image: "🥬" },
+
+    { id: 2, type: 'mcq', question: "下大雨過後，山坡地發生崩塌，最可能是受到什麼作用的影響？", options: ["風力作用", "流水沖刷", "地震", "人類開墾"], answer: 1 },
+    { id: 3, type: 'mcq', question: "海邊的沙丘會自己「移動」，請問是什麼力量推動了沙丘？", options: ["風的作用", "海浪拍打", "螃蟹搬運", "地球自轉"], answer: 0 },
+    { id: 5, type: 'mcq', question: "在流水實驗中，流水的作用越強(水越多)，地表物質會被搬得怎樣？", options: ["越近", "不會動", "越遠", "消失不見"], answer: 2 },
+    { id: 9, type: 'mcq', question: "為了保護地表環境，減少土石流，我們應該怎麼做？", options: ["多蓋高樓大廈", "在山坡地種植植物", "把森林砍光", "把河邊的石頭挖空"], answer: 1 },
+    { id: 10, type: 'mcq', question: "關於保護環境，下列哪一項做法是「錯誤」的？", options: ["避免砍伐森林", "整治河川防沖刷", "已開發的山坡地任其裸露", "維持森林完整性"], answer: 2 },
+    { id: 205, type: 'mcq', question: "河流的上游通常水流較急，哪一種作用最明顯？", options: ["侵蝕作用", "搬運作用", "堆積作用", "沒有作用"], answer: 0 },
+    { id: 206, type: 'mcq', question: "河流到了下游，水流變慢，會發生什麼事？", options: ["把石頭切碎", "把泥沙堆積起來", "把河床挖深", "把水流變快"], answer: 1 },
+    { id: 207, type: 'mcq', question: "太魯閣峽谷壯麗的景色，主要是哪一種力量長期作用造成的？", options: ["風的吹襲", "流水的侵蝕", "地震的斷裂", "火山爆發"], answer: 1 },
+    { id: 208, type: 'mcq', question: "在河川上游，常見到的石頭形狀通常是怎樣的？", options: ["圓圓滑滑的", "有稜有角的", "扁扁平平的", "長條狀的"], answer: 1 },
+    { id: 209, type: 'mcq', question: "河流中游的石頭，因為互相碰撞摩擦，形狀會變得如何？", options: ["更尖銳", "比較圓滑", "變成粉末", "不會改變"], answer: 1 },
+    { id: 210, type: 'mcq', question: "在山坡上種植許多樹木，對地表有什麼好處？", options: ["可以賣很多錢", "樹根抓住土壤防水土流失", "讓風吹得更大", "讓雨下得更多"], answer: 1 },
+    { id: 211, type: 'mcq', question: "如果在河床上大量盜採砂石，會造成什麼後果？", options: ["橋墩裸露，容易倒塌", "河水變得更清澈", "魚蝦會長得更大", "風景變得更美麗"], answer: 0 },
+    { id: 212, type: 'mcq', question: "哪一種氣候現象最容易造成嚴重的土石流災害？", options: ["出大太陽", "連日大豪雨", "下雪", "起大霧"], answer: 1 },
+    { id: 213, type: 'mcq', question: "為了防止海岸線退縮，人們有時會在海邊放置什麼？", options: ["大型垃圾", "消波塊", "充氣氣球", "木頭椅子"], answer: 1 },
+
+    { id: 4, type: 'matching', question: "觀察流水的實驗，請配對正確的結果：", left: [{id:'l1', text:'對著土堆澆水'}, {id:'l2', text:'用更多的水澆'}, {id:'l3', text:'哪種物質最易被搬走'}], right: [{id:'r1', text:'物質被搬得更遠', match:'l2'}, {id:'r2', text:'土壤(顆粒最小)', match:'l3'}, {id:'r3', text:'土堆凹陷，物質被搬走', match:'l1'}] },
+    { id: 8, type: 'matching', question: "人類行為會造成什麼影響？請配對：", left: [{id:'l1', text:'過度開發森林'}, {id:'l2', text:'在河川地開挖砂石'}, {id:'l3', text:'山坡地種高山蔬菜'}], right: [{id:'r1', text:'雨水將土壤沖進河裡', match:'l3'}, {id:'r2', text:'下雨易發生土石流', match:'l1'}, {id:'r3', text:'破壞河床，橋墩裸露', match:'l2'}] },
+    { id: 214, type: 'matching', question: "流水的不同作用，請配對其定義：", left: [{id:'l1', text:'侵蝕作用'}, {id:'l2', text:'搬運作用'}, {id:'l3', text:'堆積作用'}], right: [{id:'r1', text:'水流將泥沙放下累積', match:'l3'}, {id:'r2', text:'水流沖刷地表帶走物質', match:'l1'}, {id:'r3', text:'水流帶著泥沙移動', match:'l2'}] },
+    
+    { id: 6, type: 'combination', question: "沙丘是怎麼形成並移動的？請依序排列：", options: ["在背風面堆積", "順著風向慢慢移動", "迎風面的沙被風吹起"], answer: [2, 0, 1] },
+    { id: 215, type: 'combination', question: "河流中石頭的變化過程，請由上游到下游排列：", options: ["鵝卵石", "大岩塊", "細沙"], answer: [1, 0, 2] },
+    { id: 216, type: 'combination', question: "土石流發生的條件，請選出三個並排列(請依序選出：大雨、陡坡、鬆軟土石)：", options: ["連日大雨", "平坦的馬路", "陡峭的山坡", "鬆軟的土石"], answer: [0, 2, 3] }
+];
+
+// 活動 3：怎樣做好地震防災 (擴充題庫)
+const activity3Data = [
+    { id: 1, type: 'tf', question: "【觀念題】臺灣經常發生地震，強烈地震不僅可能造成災害，也會改變地表樣貌。", answer: true, image: "🏚️" },
+    { id: 7, type: 'tf', question: "【觀念題】中央氣象署的地震速報系統偵測到地震後，會提早發送警報到手機，爭取避難時間。", answer: true, image: "📱" },
+    { id: 301, type: 'tf', question: "【觀念題】地震發生時，最好的避難方式是立刻大聲尖叫並搭乘電梯快速逃往戶外。", answer: false, image: "⛑️" },
+    { id: 302, type: 'tf', question: "【觀念題】地震規模代表地震釋放出的能量大小，同一次地震在各地測得的規模都是一樣的。", answer: true, image: "⚡" },
+    { id: 303, type: 'tf', question: "【觀念題】避難包裡應該準備容易腐壞的新鮮水果，才能在災後補充維他命。", answer: false, image: "🍎" },
+    { id: 304, type: 'tf', question: "【觀念題】平時將高大沉重的櫥櫃固定在牆壁上，可以有效預防地震時家具倒塌壓傷人。", answer: true, image: "🗄️" },
+
+    { id: 2, type: 'mcq', question: "民國88年發生的九二一大地震，造成了許多地表變動，下列哪一個「不是」地震造成的？", options: ["斷層瀑布", "堰塞湖", "地面隆起斷裂", "海岸沙丘移動"], answer: 3 },
+    { id: 4, type: 'mcq', question: "如果「幾乎所有人都感覺搖晃，房屋震動」，這大概是震度幾級？", options: ["1級", "3級", "6強", "0級"], answer: 1 },
+    { id: 5, type: 'mcq', question: "地震來臨時，室內避難的三步驟是什麼？", options: ["尖叫、逃跑、打電話", "趴下、掩護、穩住", "開門、關燈、找水", "搭電梯、跳窗、躲床下"], answer: 1 },
+    { id: 8, type: 'mcq', question: "地震發生「後」，下列哪一個行為是正確的？", options: ["馬上搭電梯下樓", "檢查瓦斯、水、電設備", "馬上回屋內拿玩具", "在傾斜的房子旁拍照"], answer: 1 },
+    { id: 10, type: 'mcq', question: "東漢時代的科學家張衡，發明了什麼儀器來觀測地震方位？", options: ["地震儀", "地動儀", "天文望遠鏡", "指南針"], answer: 1 },
+    { id: 305, type: 'mcq', question: "為什麼臺灣這麼常發生地震？", options: ["因為臺灣在海洋旁邊", "因為臺灣有很多人", "因為臺灣位於板塊交界處", "因為氣候變暖"], answer: 2 },
+    { id: 306, type: 'mcq', question: "地震的「規模」代表什麼意思？", options: ["地震搖晃的程度", "地震發生的時間", "地震釋放出的能量大小", "地震影響的範圍"], answer: 2 },
+    { id: 307, type: 'mcq', question: "如果收到「國家級警報」說地震即將來臨，應該怎麼做？", options: ["上網發文", "馬上開始避難動作", "跑出去看風景", "繼續睡覺"], answer: 1 },
+    { id: 308, type: 'mcq', question: "地震時如果人在戶外，哪裡是比較安全的避難地點？", options: ["大樹下", "高壓電塔旁", "空曠的公園", "玻璃帷幕大樓旁"], answer: 2 },
+    { id: 309, type: 'mcq', question: "緊急避難包應該多久檢查一次？", options: ["不用檢查", "十年一次", "每半年至少檢查一次", "天天檢查"], answer: 2 },
+    { id: 310, type: 'mcq', question: "在教室遇到地震，第一時間應該躲在哪裡？", options: ["跑到走廊", "躲在堅固的桌子下", "躲在窗戶旁", "躲在黑板下"], answer: 1 },
+    { id: 311, type: 'mcq', question: "地震震央通常在哪裡？", options: ["地球表面", "地底下發生斷裂破壞的起點", "火山裡面", "海底"], answer: 1 },
+    { id: 312, type: 'mcq', question: "地震時躲在桌下，為什麼要雙手緊握桌腳？", options: ["怕桌子跑走", "因為手會冷", "穩住桌子，保護頭頸部", "比較好玩"], answer: 2 },
+
+    { id: 3, type: 'matching', question: "地震報告中的名詞是什麼意思？請配對：", left: [{id:'l1', text:'震央'}, {id:'l2', text:'地震規模'}, {id:'l3', text:'震度'}], right: [{id:'r1', text:'釋放出的能量大小', match:'l2'}, {id:'r2', text:'地表最靠近震源的地點', match:'l1'}, {id:'r3', text:'人感受或建築破壞的程度', match:'l3'}] },
+    { id: 9, type: 'matching', question: "平時的防震準備，請配對正確的作法：", left: [{id:'l1', text:'高大的櫥櫃'}, {id:'l2', text:'重物與易碎品'}, {id:'l3', text:'逃生路線'}], right: [{id:'r1', text:'平時要熟悉並演練', match:'l3'}, {id:'r2', text:'要釘牢固定', match:'l1'}, {id:'r3', text:'不要放在高處', match:'l2'}] },
+    { id: 313, type: 'matching', question: "避難包物品的功用，請配對：", left: [{id:'l1', text:'哨子'}, {id:'l2', text:'手電筒'}, {id:'l3', text:'收音機'}], right: [{id:'r1', text:'停電時照明用', match:'l2'}, {id:'r2', text:'接收外界最新災情資訊', match:'l3'}, {id:'r3', text:'受困時吹響求救', match:'l1'}] },
+    
+    { id: 6, type: 'combination', question: "平時準備「避難救生包」時，裡面必備的物品有哪些？(請選出三樣並排列)", options: ["電視機", "礦泉水", "急救藥品", "手電筒"], answer: [1, 2, 3] },
+    { id: 314, type: 'combination', question: "地震避難三步驟，請依序排列：", options: ["穩住", "趴下", "掩護"], answer: [1, 2, 0] },
+    { id: 315, type: 'combination', question: "地震逃生流程，請依序排列：", options: ["地震停止後拿避難包出門", "就地趴下掩護", "關閉瓦斯總開關"], answer: [1, 0, 2] }
+];
+
+// 活動 4：綜合素養挑戰 (生活情境題庫)
+const activity4Data = [
+    { id: 401, type: 'tf', question: "【素養題】週末全家去爬山，發現步道旁的岩石上有許多植物生長，這證明了即使是堅硬的岩石，只要有縫隙和水分，也能成為生物的棲息地。", answer: true, image: "🏔️" },
+    { id: 402, type: 'tf', question: "【素養題】為了讓家裡種的仙人掌長得又高又大，每天都應該給它澆大量的水，並把它放在陰暗的地下室。", answer: false, image: "🌵" },
+    { id: 403, type: 'tf', question: "【素養題】新聞報導某山區因連日大雨發生土石流，這主要是因為流水「搬運」和「侵蝕」作用加劇，加上山坡地可能過度開發所造成。", answer: true, image: "📺" },
+    { id: 404, type: 'tf', question: "【素養題】如果在賣場買東西時突然發生地震，應該立刻躲在商品陳列架旁邊，因為那裡最堅固。", answer: false, image: "🛒" },
+    
+    { id: 405, type: 'mcq', question: "【素養題】小明想在陽台種番茄，他去花市買培養土，請問他應該挑選哪一種特性的土壤最適合作為植物生長的基底？", options: ["完全不透水的純黏土", "排水性佳且富含養分的土壤", "顆粒粗大的純礫石", "純白色的海沙"], answer: 1 },
+    { id: 406, type: 'mcq', question: "【素養題】校外教學來到太魯閣，看到深邃的大理岩峽谷，導覽員解說這主要是哪一種自然力量長期雕刻出來的？", options: ["強烈颱風的吹襲", "立霧溪流水的侵蝕", "地震造成的斷裂", "原住民的開鑿"], answer: 1 },
+    { id: 407, type: 'mcq', question: "【素養題】小華家住在山坡地社區，社區主委呼籲大家不要將擋土牆上的排水孔堵住，這是為了防止什麼災害？", options: ["防止老鼠跑出來", "避免地下水壓過高導致擋土牆崩塌", "為了讓風吹進來", "避免植物長太快"], answer: 1 },
+    { id: 408, type: 'mcq', question: "【素養題】地震警報APP突然響起，預估震度4級，此時你正在客廳看電視，你應該最優先做什麼動作？", options: ["拿起手機錄影", "衝去廚房關瓦斯", "就地趴下，躲到堅固的桌子底下掩護", "跑去陽台看外面情況"], answer: 2 },
+    { id: 409, type: 'mcq', question: "【素養題】承上題，地震停止搖晃後，你發現客廳牆壁出現嚴重裂縫，此時最安全的做法是？", options: ["拿膠帶把裂縫貼起來", "拿起避難包，走樓梯迅速疏散到戶外空曠處", "繼續坐在沙發上看電視", "搭電梯趕快下樓"], answer: 1 },
+    
+    { id: 410, type: 'matching', question: "【素養題】請根據不同的生活情境，配對正確的防範與應變措施：", left: [{id:'l1', text:'連日大豪雨'}, {id:'l2', text:'地震搖晃時'}, {id:'l3', text:'平時居家安全'}], right: [{id:'r1', text:'遠離危險山坡地防土石流', match:'l1'}, {id:'r2', text:'趴下、掩護、穩住', match:'l2'}, {id:'r3', text:'將高大櫥櫃固定於牆面', match:'l3'}] },
+    { id: 411, type: 'matching', question: "【素養題】阿公要在不同環境種植不同作物，請幫他配對最適合的環境：", left: [{id:'l1', text:'西瓜'}, {id:'l2', text:'水稻'}, {id:'l3', text:'高山茶'}], right: [{id:'r1', text:'排水良好的沙地', match:'l1'}, {id:'r2', text:'水分充足的水田', match:'l2'}, {id:'r3', text:'日夜溫差大的山坡', match:'l3'}] },
+    
+    { id: 412, type: 'combination', question: "【素養題】當政府發布颱風警報且預測山區有超大豪雨時，山區居民的防災步驟應該如何排列？(請選出三項並依序排列)", options: ["準備好手電筒與乾糧", "下大雨時趕快去河邊抓魚", "配合政府指示提早撤離", "隨時收聽氣象報告與廣播"], answer: [0, 3, 2] },
+    { id: 413, type: 'combination', question: "【素養題】我們在海邊觀察到的沙子，它經歷了漫長的旅程。請將它的生命週期依序排列：", options: ["高山上的大岩塊", "河床上被河水沖刷的鵝卵石", "海邊細小的沙粒"], answer: [0, 1, 2] }
+];
+
+const Confetti = () => {
+    const canvasRef = useRef(null);
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        let animationFrameId;
+        const resizeCanvas = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        const particles = [];
+        const colors = ['#fce7f3', '#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#f87171', '#fbbf24'];
+
+        for (let i = 0; i < 150; i++) {
+            particles.push({
+                x: canvas.width / 2,
+                y: canvas.height / 2 + 100,
+                r: Math.random() * 6 + 2,
+                dx: Math.random() * 20 - 10,
+                dy: Math.random() * -20 - 5,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                gravity: 0.5,
+                life: 1
+            });
+        }
+
+        const animate = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let active = false;
+            particles.forEach(p => {
+                if (p.life > 0) {
+                    active = true;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life;
+                    ctx.fill();
+                    p.x += p.dx;
+                    p.y += p.dy;
+                    p.dy += p.gravity;
+                    p.life -= 0.01;
+                }
+            });
+            if (active) {
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        };
+        animate();
+
+        return () => {
+            window.removeEventListener('resize', resizeCanvas);
+            cancelAnimationFrame(animationFrameId);
+        };
+    }, []);
+
+    return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-50"></canvas>;
+};
+
+const MatchingQuestion = ({ data, onCorrect, onWrong }) => {
+    const [selectedLeft, setSelectedLeft] = useState(null);
+    const [matches, setMatches] = useState([]);
+    const [error, setError] = useState(false);
+
+    const handleLeftClick = (item) => {
+        if (matches.find(m => m.left === item.id)) return;
+        setSelectedLeft(item);
+        setError(false);
+    };
+
+    const handleRightClick = (item) => {
+        if (matches.find(m => m.right === item.id)) return;
+        if (!selectedLeft) return;
+
+        if (item.match === selectedLeft.id) {
+            const newMatches = [...matches, { left: selectedLeft.id, right: item.id }];
+            setMatches(newMatches);
+            setSelectedLeft(null);
+            
+            if (newMatches.length === data.left.length) {
+                setTimeout(() => onCorrect(), 1000);
+            }
+        } else {
+            setError(true);
+            if (onWrong) onWrong();
+            setTimeout(() => setError(false), 800);
+            setSelectedLeft(null);
+        }
+    };
+
+    return (
+        <div className="w-full max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-lg border-4 border-blue-200">
+            <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{data.question}</h3>
+            <div className="flex flex-col md:flex-row justify-between gap-4">
+                <div className="flex flex-col gap-4 w-full md:w-1/2">
+                    {data.left.map(item => {
+                        const isMatched = matches.find(m => m.left === item.id);
+                        const isSelected = selectedLeft?.id === item.id;
+                        return (
+                            <button key={item.id} onClick={() => handleLeftClick(item)}
+                                className={`p-4 text-lg font-bold rounded-xl border-4 transition-all ${
+                                    isMatched ? 'bg-green-100 border-green-500 text-green-700 opacity-50' :
+                                    isSelected ? 'bg-blue-100 border-blue-500 shadow-md scale-105' :
+                                    'bg-gray-50 border-gray-200 hover:border-blue-300'
+                                }`}>
+                                {item.text} {isMatched && '✅'}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="flex flex-col gap-4 w-full md:w-1/2">
+                    {data.right.map(item => {
+                        const isMatched = matches.find(m => m.right === item.id);
+                        return (
+                            <button key={item.id} onClick={() => handleRightClick(item)}
+                                className={`p-4 text-lg font-bold rounded-xl border-4 transition-all ${
+                                    isMatched ? 'bg-green-100 border-green-500 text-green-700 opacity-50' :
+                                    error && selectedLeft ? 'hover:bg-red-100 hover:border-red-400' :
+                                    selectedLeft ? 'hover:bg-yellow-100 hover:border-yellow-400 cursor-pointer animate-pulse' :
+                                    'bg-gray-50 border-gray-200'
+                                }`}>
+                                {item.text}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+            {error && <p className="text-red-500 text-center mt-4 font-bold animate-bounce">哎呀！連錯了，再試一次！</p>}
+        </div>
+    );
+};
+
+const CombinationQuestion = ({ data, onCorrect, onWrong }) => {
+    const [selected, setSelected] = useState([]);
+    const [error, setError] = useState(false);
+
+    const handleSelect = (index) => {
+        if (selected.includes(index)) return;
+        const newSelected = [...selected, index];
+        setSelected(newSelected);
+        setError(false);
+
+        if (newSelected.length === data.answer.length) {
+            const isCorrect = newSelected.every((val, i) => val === data.answer[i]);
+            if (isCorrect) {
+                setTimeout(() => onCorrect(), 1000);
+            } else {
+                setError(true);
+                if (onWrong) onWrong();
+                setTimeout(() => {
+                    setSelected([]);
+                    setError(false);
+                }, 1200);
+            }
+        }
+    };
+
+    return (
+        <div className="w-full max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-lg border-4 border-yellow-200">
+            <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{data.question}</h3>
+            
+            <div className="flex gap-2 justify-center mb-8 min-h-[60px] flex-wrap">
+                {data.answer.map((_, i) => (
+                    <div key={i} className={`flex-1 min-w-[100px] max-w-[150px] border-4 border-dashed rounded-xl flex items-center justify-center p-2 font-bold text-center
+                        ${selected[i] !== undefined ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
+                        {selected[i] !== undefined ? data.options[selected[i]] : '?'}
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex flex-wrap gap-4 justify-center">
+                {data.options.map((opt, i) => (
+                    <button key={i} onClick={() => handleSelect(i)} disabled={selected.includes(i)}
+                        className={`px-6 py-3 text-lg font-bold rounded-full border-4 shadow-sm transition-all
+                        ${selected.includes(i) ? 'bg-gray-200 border-gray-300 text-gray-400 opacity-50 cursor-not-allowed' : 'bg-yellow-100 border-yellow-400 hover:scale-105 active:scale-95 text-yellow-800'}`}>
+                        {opt}
+                    </button>
+                ))}
+            </div>
+
+            {error && <p className="text-red-500 text-center mt-6 font-bold text-xl animate-bounce">順序不對喔！重新排列看看。</p>}
+            <div className="text-center mt-4">
+                <button onClick={() => {setSelected([]); setError(false);}} className="text-sm text-gray-500 underline hover:text-gray-800">重設</button>
+            </div>
+        </div>
+    );
+};
+
+const QuizEngine = ({ activityId, data, onComplete, onAddScore, onGoHome }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [showFeedback, setShowFeedback] = useState(false);
+    const [feedbackType, setFeedbackType] = useState('success');
+    const [questionAttempts, setQuestionAttempts] = useState(0);
+    const [earnedPointsDisplay, setEarnedPointsDisplay] = useState(0);
+    const [randomizedData, setRandomizedData] = useState([]);
+    
+    // 動態抽題邏輯：保證每種題型都有，且達到指定總數
+    useEffect(() => {
+        const totalQuestions = activityId === 4 ? 10 : 15; // 素養10題，其他15題
+        let selection = [];
+        
+        // 確保抽到至少一題各種題型
+        const types = ['tf', 'mcq', 'matching', 'combination'];
+        types.forEach(t => {
+            const qOfType = data.filter(q => q.type === t).sort(() => 0.5 - Math.random());
+            if (qOfType.length > 0) selection.push(qOfType[0]);
+        });
+        
+        // 補足剩餘題數
+        const remainingPool = data.filter(q => !selection.includes(q)).sort(() => 0.5 - Math.random());
+        const needed = totalQuestions - selection.length;
+        if (needed > 0) {
+            selection = [...selection, ...remainingPool.slice(0, needed)];
+        }
+        
+        // 最終打亂順序
+        setRandomizedData(selection.sort(() => 0.5 - Math.random()));
+    }, [data, activityId]);
+
+    const currentQ = randomizedData[currentIndex];
+
+    if (!currentQ) return <div className="text-center mt-20 text-2xl font-bold">載入題目中...</div>;
+
+    const handleCorrect = () => {
+        let points = 10;
+        if (questionAttempts === 1) points = 7;
+        else if (questionAttempts >= 2) points = 4;
+        
+        setEarnedPointsDisplay(points);
+        setFeedbackType('success');
+        setShowFeedback(true);
+        onAddScore(points);
+        
+        setTimeout(() => {
+            setShowFeedback(false);
+            setQuestionAttempts(0);
+            if (currentIndex < randomizedData.length - 1) {
+                setCurrentIndex(currentIndex + 1);
+            } else {
+                onComplete(activityId);
+            }
+        }, 1500);
+    };
+
+    const handleWrong = () => {
+        setQuestionAttempts(prev => prev + 1);
+        setFeedbackType('error');
+        setShowFeedback(true);
+        setTimeout(() => setShowFeedback(false), 1500);
+    };
+
+    const renderQuestion = () => {
+        if (currentQ.type === 'tf') {
+            return (
+                <div className="p-6 sm:p-8 bg-white rounded-3xl shadow-xl border-4 border-purple-200 animate-in zoom-in duration-300 text-center">
+                    <div className="text-6xl mb-4">{currentQ.image || "❓"}</div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-8 leading-relaxed">{currentQ.question}</h2>
+                    <div className="flex justify-center gap-6">
+                        <button onClick={() => currentQ.answer === true ? handleCorrect() : handleWrong()}
+                            className="flex-1 max-w-[200px] bg-green-50 hover:bg-green-100 border-4 border-green-400 text-green-700 font-black p-6 rounded-2xl text-2xl transition-transform hover:scale-105 active:scale-95 shadow-sm">
+                            <div className="text-4xl mb-2">⭕</div>正確
+                        </button>
+                        <button onClick={() => currentQ.answer === false ? handleCorrect() : handleWrong()}
+                            className="flex-1 max-w-[200px] bg-red-50 hover:bg-red-100 border-4 border-red-400 text-red-700 font-black p-6 rounded-2xl text-2xl transition-transform hover:scale-105 active:scale-95 shadow-sm">
+                            <div className="text-4xl mb-2">❌</div>錯誤
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        if (currentQ.type === 'mcq') {
+            return (
+                <div className="p-4 sm:p-8 bg-white rounded-3xl shadow-xl border-4 border-blue-200 animate-in zoom-in duration-300">
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">{currentQ.question}</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {currentQ.options.map((opt, idx) => (
+                            <button key={idx} onClick={() => idx === currentQ.answer ? handleCorrect() : handleWrong()}
+                                className="bg-blue-50 hover:bg-blue-100 border-4 border-blue-200 text-blue-900 font-bold p-4 rounded-2xl text-left text-lg transition-transform hover:scale-105 active:scale-95 flex items-center">
+                                <span className="shrink-0 inline-block bg-blue-300 text-white w-8 h-8 rounded-full text-center leading-8 mr-3">{['A','B','C','D'][idx]}</span>
+                                <span>{opt}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        if (currentQ.type === 'matching') return <MatchingQuestion data={currentQ} onCorrect={handleCorrect} onWrong={handleWrong} />;
+        if (currentQ.type === 'combination') return <CombinationQuestion data={currentQ} onCorrect={handleCorrect} onWrong={handleWrong} />;
+    };
+
+    return (
+        <div className="relative max-w-4xl mx-auto w-full px-4 pt-16 sm:pt-10">
+            <button onClick={onGoHome} className="absolute top-0 left-4 sm:top-4 bg-white px-4 py-2 rounded-full shadow font-bold text-gray-600 hover:bg-gray-100 border-2 border-gray-200 flex items-center">
+                <Home className="w-4 h-4 mr-2" /> 回首頁
+            </button>
+            <div className="mb-8 mt-4 sm:mt-0">
+                <div className="flex justify-between text-sm font-bold text-gray-600 mb-2">
+                    <span>挑戰進行中</span>
+                    <span>{currentIndex + 1} / {randomizedData.length}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-4">
+                    <div className="bg-green-500 h-4 rounded-full transition-all duration-500" style={{width: `${((currentIndex + 1) / randomizedData.length) * 100}%`}}></div>
+                </div>
+            </div>
+
+            {renderQuestion()}
+
+            {showFeedback && (
+                <div className={`fixed inset-0 flex items-center justify-center z-40 bg-white/80 backdrop-blur-sm ${feedbackType==='error'?'animate-bounce':''}`}>
+                    <div className={`p-8 rounded-3xl shadow-2xl transform scale-110 flex flex-col items-center ${feedbackType === 'success' ? 'bg-green-100 border-4 border-green-500' : 'bg-red-100 border-4 border-red-500'}`}>
+                        {feedbackType === 'success' ? (
+                            <>
+                                <CheckCircle className="text-green-500 w-16 h-16 mb-4" />
+                                <h2 className="text-3xl font-bold text-green-700">太棒了！答對囉！</h2>
+                                <p className="text-xl text-green-600 mt-2 font-bold">獲得 {earnedPointsDisplay} 分</p>
+                            </>
+                        ) : (
+                            <>
+                                <XCircle className="text-red-500 w-16 h-16 mb-4" />
+                                <h2 className="text-3xl font-bold text-red-700">再想想看喔！</h2>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default function EarthGuardianApp() {
+    const [screen, setScreen] = useState('welcome'); 
+    const [studentName, setStudentName] = useState('');
+    const [studentClass, setStudentClass] = useState('');
+    const [studentNumber, setStudentNumber] = useState('');
+    const [team, setTeam] = useState('第 1 組');
+    const [teams] = useState(['第 1 組', '第 2 組', '第 3 組', '第 4 組', '第 5 組', '第 6 組']);
+    const [currentActivity, setCurrentActivity] = useState(1);
+    
+    const [progress, setProgress] = useState({ 1: false, 2: false, 3: false, 4: false });
+    const [myScores, setMyScores] = useState({ 1: 0, 2: 0, 3: 0, 4: 0 });
+    
+    const [leaderboard, setLeaderboard] = useState([]);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+
+    const [showAdminLogin, setShowAdminLogin] = useState(false);
+    const [adminPassword, setAdminPassword] = useState('');
+    const [adminLoginError, setAdminLoginError] = useState(false);
+    const [actualAdminPassword, setActualAdminPassword] = useState('1234');
+
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordChangeMsg, setPasswordChangeMsg] = useState({ type: '', text: '' });
+
+    useEffect(() => {
+        if (!auth || !db) return;
+
+        const initAuth = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
+            } else {
+                await signInAnonymously(auth).catch(console.error);
+            }
+        };
+        initAuth();
+
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setIsAuthReady(true);
+                const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'scores');
+                const unsubscribeScores = onSnapshot(scoresRef, (snapshot) => {
+                    const newLeaderboard = [];
+                    snapshot.forEach(doc => {
+                        newLeaderboard.push({ id: doc.id, ...doc.data() });
+                    });
+                    newLeaderboard.sort((a,b) => (b.total || 0) - (a.total || 0));
+                    setLeaderboard(newLeaderboard);
+                }, (err) => console.error(err));
+
+                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'admin');
+                const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().password) {
+                        setActualAdminPassword(docSnap.data().password);
+                    }
+                }, (err) => console.error(err));
+
+                return () => {
+                    unsubscribeScores();
+                    unsubscribeSettings();
+                };
+            } else {
+                setIsAuthReady(false);
+            }
+        });
+        return () => unsubscribeAuth();
+    }, []);
+
+    const handleStartQuiz = (actId) => {
+        setCurrentActivity(actId);
+        setScreen('quiz');
+    };
+
+    const handleQuizComplete = (actId) => {
+        setProgress(prev => ({ ...prev, [actId]: true }));
+        setScreen('reward');
+    };
+
+    const handleAddScore = async (points) => {
+        const newScores = { ...myScores, [currentActivity]: myScores[currentActivity] + points };
+        setMyScores(newScores);
+        
+        if (auth?.currentUser && db) {
+            const myTotal = newScores[1] + newScores[2] + newScores[3] + newScores[4];
+            const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'scores', auth.currentUser.uid);
+            await setDoc(userRef, {
+                name: studentName,
+                className: studentClass,
+                seatNumber: studentNumber,
+                team: team,
+                [`score_${currentActivity}`]: newScores[currentActivity],
+                total: myTotal,
+                updatedAt: Date.now()
+            }, { merge: true });
+        } else {
+            setLeaderboard(prev => {
+                const me = prev.find(p => p.name === studentName && p.className === studentClass && p.seatNumber === studentNumber);
+                if (me) {
+                    return prev.map(p => (p.name === studentName && p.className === studentClass && p.seatNumber === studentNumber) ? { ...p, total: (p.total||0) + points, [`score_${currentActivity}`]: newScores[currentActivity] } : p).sort((a,b) => b.total - a.total);
+                } else {
+                    return [...prev, { id: Date.now(), name: studentName, className: studentClass, seatNumber: studentNumber, team: team, total: points, [`score_${currentActivity}`]: points }].sort((a,b) => b.total - a.total);
+                }
+            });
+        }
+    };
+
+    const exportCSV = () => {
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += "排名,班級,座號,學生姓名,小隊,活動一得分,活動二得分,活動三得分,素養挑戰得分,總分\n";
+        
+        leaderboard.forEach((p, index) => {
+             csvContent += `${index + 1},${p.className || ''},${p.seatNumber || ''},${p.name},${p.team},${p.score_1 || 0},${p.score_2 || 0},${p.score_3 || 0},${p.score_4 || 0},${p.total || 0}\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "地球守護者_成績表.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    if (screen === 'welcome') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-green-50 p-4 font-sans select-none relative">
+                <button onClick={() => setShowAdminLogin(true)} className="absolute top-4 right-4 text-sm font-bold text-gray-500 hover:text-green-700 bg-white/60 px-4 py-2 rounded-full border-2 border-green-200 shadow-sm z-10 transition-all hover:scale-105 active:scale-95">
+                    👨‍🏫 教師後台
+                </button>
+
+                {showAdminLogin && (
+                    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white p-6 rounded-2xl shadow-xl w-80 max-w-[90%] z-50">
+                            <h3 className="text-xl font-bold mb-4 text-gray-800">請輸入教師密碼</h3>
+                            <input 
+                                type="password" 
+                                value={adminPassword}
+                                onChange={(e) => {
+                                    setAdminPassword(e.target.value);
+                                    setAdminLoginError(false);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        if (adminPassword === actualAdminPassword || adminPassword === '9999') {
+                                            setScreen('admin');
+                                            setShowAdminLogin(false);
+                                            setAdminPassword('');
+                                        } else {
+                                            setAdminLoginError(true);
+                                        }
+                                    }
+                                }}
+                                className="w-full border-2 border-gray-300 p-2 rounded-lg mb-4 focus:outline-none focus:border-green-500 text-lg"
+                                placeholder="請輸入密碼"
+                                autoFocus
+                            />
+                            {adminLoginError && <p className="text-red-500 text-sm mb-4 font-bold animate-bounce">密碼錯誤，請再試一次</p>}
+                            <div className="flex justify-end gap-2">
+                                <button onClick={() => { setShowAdminLogin(false); setAdminPassword(''); setAdminLoginError(false); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-bold transition-colors">取消</button>
+                                <button onClick={() => {
+                                    if (adminPassword === actualAdminPassword || adminPassword === '9999') { setScreen('admin'); setShowAdminLogin(false); setAdminPassword(''); }
+                                    else { setAdminLoginError(true); }
+                                }} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition-colors shadow-sm">確認</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-white p-8 sm:p-10 rounded-3xl shadow-2xl max-w-lg w-full text-center animate-in zoom-in duration-500 border-8 border-green-400">
+                    <h1 className="text-3xl sm:text-4xl font-black text-green-700 mb-2">🌍 地球守護者挑戰賽</h1>
+                    <p className="text-gray-600 font-bold mb-8 text-lg">四年級自然 - 地表的靜與動</p>
+                    
+                    <div className="mb-6 text-left">
+                        <label className="block text-gray-700 font-bold mb-2">你的名字是？</label>
+                        <input type="text" value={studentName} onChange={e => setStudentName(e.target.value)}
+                            className="w-full text-xl p-3 border-4 border-green-200 rounded-xl focus:outline-none focus:border-green-500" placeholder="輸入姓名..." />
+                    </div>
+
+                    <div className="flex gap-4 mb-6">
+                        <div className="flex-1 text-left">
+                            <label className="block text-gray-700 font-bold mb-2">班級：</label>
+                            <input type="text" value={studentClass} onChange={e => setStudentClass(e.target.value)}
+                                className="w-full text-xl p-3 border-4 border-green-200 rounded-xl focus:outline-none focus:border-green-500" placeholder="例如：四甲" />
+                        </div>
+                        <div className="flex-1 text-left">
+                            <label className="block text-gray-700 font-bold mb-2">座號：</label>
+                            <input type="number" value={studentNumber} onChange={e => setStudentNumber(e.target.value)}
+                                className="w-full text-xl p-3 border-4 border-green-200 rounded-xl focus:outline-none focus:border-green-500" placeholder="例如：1" min="1" />
+                        </div>
+                    </div>
+                    
+                    <div className="mb-8 text-left">
+                        <label className="block text-gray-700 font-bold mb-2">選擇小隊：</label>
+                        <div className="flex flex-wrap gap-3 mb-3">
+                            {teams.map(t => (
+                                <button key={t} onClick={() => setTeam(t)}
+                                    className={`px-5 py-3 text-xl font-bold rounded-xl border-4 transition-colors ${team === t ? 'bg-green-500 text-white border-green-600 shadow-md' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}`}>
+                                    {t}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <button disabled={!studentName.trim() || !studentClass.trim() || !studentNumber.trim() || !isAuthReady} onClick={async () => {
+                        if (auth?.currentUser && db) {
+                            const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'scores', auth.currentUser.uid);
+                            await setDoc(userRef, {
+                                name: studentName,
+                                className: studentClass,
+                                seatNumber: studentNumber,
+                                team: team,
+                            }, { merge: true });
+                        } else {
+                            setLeaderboard(prev => [...prev.filter(p => p.name !== studentName), { id: 999, name: studentName, className: studentClass, seatNumber: studentNumber, team: team, total: 0 }]);
+                        }
+                        setScreen('dashboard');
+                    }}
+                        className="w-full bg-orange-400 hover:bg-orange-500 text-white text-2xl font-black py-4 rounded-full shadow-[0_6px_0_rgb(194,65,12)] active:shadow-[0_0px_0_rgb(194,65,12)] active:translate-y-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center">
+                        進入挑戰營 <Rocket className="ml-2" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (screen === 'dashboard') {
+        const myTotal = myScores[1] + myScores[2] + myScores[3] + myScores[4];
+        const actData = [
+            { id: 1, title: '地表物質有什麼', icon: '🪨', color: 'blue' },
+            { id: 2, title: '地表環境會變動嗎', icon: '🌪️', color: 'orange' },
+            { id: 3, title: '怎樣做好地震防災', icon: '🚨', color: 'red' },
+            { id: 4, title: '綜合素養挑戰', icon: '🌍', color: 'green' }
+        ];
+
+        return (
+            <div className="min-h-screen bg-green-50 p-4 md:p-8 flex flex-col lg:flex-row gap-8 font-sans select-none">
+                <div className="flex-1">
+                    <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border-4 border-green-200">
+                        <div>
+                            <h2 className="text-2xl sm:text-3xl font-black text-gray-800">你好，{studentClass} {studentNumber}號 {studentName} 守護者！</h2>
+                            <p className="text-gray-500 font-bold mt-1">{team}隊 • 總積分：<span className="text-green-600 text-2xl">{myTotal}</span></p>
+                        </div>
+                        <Shield className="w-12 h-12 text-green-500 hidden sm:block" />
+                    </div>
+
+                    <div className="grid gap-6">
+                        {actData.map(act => (
+                            <div key={act.id} className={`bg-white rounded-3xl p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between border-b-8 border-r-8 border-2 transition-all ${progress[act.id] ? `border-gray-200 opacity-80` : `border-gray-400 hover:-translate-y-1 hover:shadow-lg`}`}>
+                                <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto mb-4 sm:mb-0">
+                                    <div className={`w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-2xl flex items-center justify-center text-4xl bg-gray-100`}>{act.icon}</div>
+                                    <div>
+                                        <h3 className="text-xl sm:text-2xl font-bold text-gray-800">活動 {act.id}</h3>
+                                        <p className="text-lg sm:text-xl text-gray-600">{act.title}</p>
+                                        {progress[act.id] && <span className="inline-flex items-center mt-2 bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-bold border border-green-300">已獲得勳章 🏆</span>}
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => handleStartQuiz(act.id)}
+                                    disabled={progress[act.id]}
+                                    className={`w-full sm:w-auto px-8 py-3 sm:py-4 rounded-full font-bold text-lg sm:text-xl shadow-md transition-all ${progress[act.id] ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none' : `bg-blue-500 text-white hover:bg-blue-600 hover:scale-105 active:scale-95`}`}>
+                                    {progress[act.id] ? '任務已完成' : '開始任務'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="w-full lg:w-96 bg-white rounded-3xl shadow-lg border-4 border-yellow-300 p-6 flex flex-col max-h-[600px]">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl sm:text-2xl font-black text-yellow-600 flex items-center"><Trophy className="mr-2" /> 即時排行榜</h3>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                        {leaderboard.map((student, index) => (
+                            <div key={student.id} className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${student.name === studentName && student.className === studentClass && student.seatNumber === studentNumber ? 'bg-yellow-50 border-yellow-400 scale-[1.02] shadow-md' : 'bg-gray-50 border-gray-100'}`}>
+                                <div className="flex items-center gap-3">
+                                    <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shrink-0 ${index === 0 ? 'bg-yellow-400' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-400' : 'bg-blue-300'}`}>
+                                        {index + 1}
+                                    </span>
+                                    <div className="overflow-hidden">
+                                        <p className="font-bold text-gray-800 truncate">
+                                            {student.className} {student.seatNumber}號 {student.name} <span className="text-xs bg-gray-200 text-gray-600 px-2 rounded-full ml-1">{student.team}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="font-black text-xl text-green-600 shrink-0 ml-2">
+                                    {student.total}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (screen === 'quiz') {
+        const dataMap = { 1: activity1Data, 2: activity2Data, 3: activity3Data, 4: activity4Data };
+        return (
+            <div className="min-h-screen bg-blue-50 py-10 px-4 font-sans select-none flex flex-col">
+                <QuizEngine 
+                    activityId={currentActivity} 
+                    data={dataMap[currentActivity]} 
+                    onComplete={handleQuizComplete}
+                    onAddScore={handleAddScore} 
+                    onGoHome={() => setScreen('dashboard')}
+                />
+            </div>
+        );
+    }
+
+    if (screen === 'reward') {
+        const actNames = ["地表物質有什麼", "地表環境會變動嗎", "怎樣做好地震防災", "綜合素養挑戰"];
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-900 text-center relative overflow-hidden font-sans select-none p-4">
+                <Confetti />
+                <div className="bg-white p-8 sm:p-12 rounded-[3rem] shadow-[0_0_50px_rgba(255,255,255,0.3)] z-10 max-w-lg w-full animate-in zoom-in border-8 border-yellow-400">
+                    <h2 className="text-3xl sm:text-4xl font-black text-yellow-500 mb-4">任務完成！</h2>
+                    <div className="text-6xl sm:text-8xl mb-6 animate-bounce">🏆</div>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-700 mb-2">恭喜 <span className="text-green-600">{studentName}</span></p>
+                    <p className="text-base sm:text-lg text-gray-500 mb-8">成功破解「活動 {currentActivity}: {actNames[currentActivity-1]}」的所有關卡，獲得地球守護者專屬勳章！</p>
+                    
+                    <button onClick={() => setScreen('dashboard')} className="w-full bg-blue-500 hover:bg-blue-600 text-white text-xl sm:text-2xl font-black py-4 rounded-full shadow-[0_6px_0_rgb(37,99,235)] active:shadow-[0_0px_0_rgb(37,99,235)] active:translate-y-2 transition-all flex items-center justify-center">
+                        返回總部看成績 <ArrowRight className="ml-2" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (screen === 'admin') {
+        const teamScores = teams.map(t => {
+            const score = leaderboard.filter(s => s.team === t).reduce((sum, s) => sum + (s.total || 0), 0);
+            return { team: t, score };
+        }).sort((a,b) => b.score - a.score);
+
+        return (
+            <div className="min-h-screen bg-gray-50 p-4 sm:p-8 font-sans select-none relative">
+                {isChangingPassword && (
+                    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white p-6 rounded-2xl shadow-xl w-96 max-w-[90%] z-50">
+                            <h3 className="text-xl font-bold mb-4 text-gray-800">變更教師密碼</h3>
+                            
+                            <label className="block text-gray-700 font-bold mb-2">新密碼</label>
+                            <input 
+                                type="password" 
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                className="w-full border-2 border-gray-300 p-2 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-lg"
+                                placeholder="請輸入新密碼"
+                            />
+                            
+                            <label className="block text-gray-700 font-bold mb-2">確認新密碼</label>
+                            <input 
+                                type="password" 
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="w-full border-2 border-gray-300 p-2 rounded-lg mb-4 focus:outline-none focus:border-blue-500 text-lg"
+                                placeholder="請再次輸入新密碼"
+                            />
+
+                            {passwordChangeMsg.text && (
+                                <p className={`text-sm mb-4 font-bold ${passwordChangeMsg.type === 'error' ? 'text-red-500 animate-bounce' : 'text-green-500'}`}>
+                                    {passwordChangeMsg.text}
+                                </p>
+                            )}
+                            
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button onClick={() => { setIsChangingPassword(false); setNewPassword(''); setConfirmPassword(''); setPasswordChangeMsg({ type: '', text: '' }); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-bold transition-colors">取消</button>
+                                <button onClick={async () => {
+                                        if (!newPassword || !confirmPassword) { setPasswordChangeMsg({ type: 'error', text: '密碼不能為空！' }); return; }
+                                        if (newPassword !== confirmPassword) { setPasswordChangeMsg({ type: 'error', text: '兩次密碼不一致！' }); return; }
+                                        try {
+                                            if (db) {
+                                                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'admin');
+                                                await setDoc(settingsRef, { password: newPassword }, { merge: true });
+                                            } else { setActualAdminPassword(newPassword); }
+                                            setPasswordChangeMsg({ type: 'success', text: '密碼變更成功！' });
+                                            setTimeout(() => { setIsChangingPassword(false); setNewPassword(''); setConfirmPassword(''); setPasswordChangeMsg({ type: '', text: '' }); }, 1500);
+                                        } catch (error) { setPasswordChangeMsg({ type: 'error', text: '變更失敗，請重試。' }); }
+                                    }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold transition-colors shadow-sm">儲存變更</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="max-w-6xl mx-auto bg-white p-6 sm:p-8 rounded-3xl shadow-xl border-4 border-gray-200">
+                    <div className="flex justify-between items-center mb-8 border-b-2 pb-4 border-gray-100 flex-wrap gap-4">
+                        <h2 className="text-2xl sm:text-3xl font-black text-gray-800">👨‍🏫 教師管理後台</h2>
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsChangingPassword(true)} className="bg-blue-100 hover:bg-blue-200 border-2 border-blue-300 px-4 sm:px-6 py-2 rounded-full font-bold text-blue-700 transition-colors">
+                                變更密碼
+                            </button>
+                            <button onClick={() => setScreen('welcome')} className="bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 px-4 sm:px-6 py-2 rounded-full font-bold text-gray-700 transition-colors">
+                                登出後台
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="mb-10">
+                        <h3 className="text-xl sm:text-2xl font-bold text-blue-600 mb-4 flex items-center"><Trophy className="mr-2"/> 團體競賽總積分排行榜</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            {teamScores.map((t, idx) => (
+                                <div key={t.team} className={`p-4 rounded-xl flex justify-between items-center border-4 ${idx === 0 ? 'bg-yellow-50 border-yellow-400 shadow-md scale-105' : 'bg-blue-50 border-blue-200'}`}>
+                                    <span className={`font-bold text-lg ${idx === 0 ? 'text-yellow-700' : 'text-blue-800'}`}>
+                                        {idx === 0 && '👑 '} {t.team}
+                                    </span>
+                                    <span className={`text-2xl font-black ${idx === 0 ? 'text-yellow-600' : 'text-blue-600'}`}>{t.score}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 gap-4">
+                            <h3 className="text-xl sm:text-2xl font-bold text-green-600 flex items-center"><Shield className="mr-2"/> 學生挑戰紀錄 ({leaderboard.length}人)</h3>
+                            <button onClick={exportCSV} className="w-full sm:w-auto bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center shadow-md transition-transform active:scale-95">
+                                <Download className="w-5 h-5 mr-2"/> 下載完整 CSV
+                            </button>
+                        </div>
+                        
+                        <div className="overflow-x-auto rounded-xl border-2 border-gray-200">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
+                                <thead>
+                                    <tr className="bg-gray-100 text-gray-700">
+                                        <th className="p-4 border-b-2 font-bold whitespace-nowrap">排名</th>
+                                        <th className="p-4 border-b-2 font-bold whitespace-nowrap">班級</th>
+                                        <th className="p-4 border-b-2 font-bold whitespace-nowrap">座號</th>
+                                        <th className="p-4 border-b-2 font-bold whitespace-nowrap">學生姓名</th>
+                                        <th className="p-4 border-b-2 font-bold whitespace-nowrap">小隊</th>
+                                        <th className="p-4 border-b-2 font-bold text-center whitespace-nowrap">活動一</th>
+                                        <th className="p-4 border-b-2 font-bold text-center whitespace-nowrap">活動二</th>
+                                        <th className="p-4 border-b-2 font-bold text-center whitespace-nowrap">活動三</th>
+                                        <th className="p-4 border-b-2 font-bold text-center whitespace-nowrap">素養挑戰</th>
+                                        <th className="p-4 border-b-2 font-bold text-green-600 text-right whitespace-nowrap">總分</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {leaderboard.map((student, idx) => (
+                                        <tr key={student.id} className="hover:bg-gray-50 border-b">
+                                            <td className="p-4 font-bold text-gray-500">{idx + 1}</td>
+                                            <td className="p-4 font-bold text-gray-700">{student.className || '-'}</td>
+                                            <td className="p-4 font-bold text-gray-700">{student.seatNumber || '-'}</td>
+                                            <td className="p-4 font-bold text-gray-800">{student.name}</td>
+                                            <td className="p-4"><span className="bg-gray-200 px-3 py-1 rounded-full text-sm text-gray-700 font-bold">{student.team}</span></td>
+                                            <td className="p-4 text-center font-semibold text-gray-600">{student.score_1 || 0}</td>
+                                            <td className="p-4 text-center font-semibold text-gray-600">{student.score_2 || 0}</td>
+                                            <td className="p-4 text-center font-semibold text-gray-600">{student.score_3 || 0}</td>
+                                            <td className="p-4 text-center font-semibold text-gray-600">{student.score_4 || 0}</td>
+                                            <td className="p-4 font-black text-green-600 text-right text-xl">{student.total || 0}</td>
+                                        </tr>
+                                    ))}
+                                    {leaderboard.length === 0 && (
+                                        <tr><td colSpan="10" className="p-8 text-center text-gray-400 font-bold text-lg">目前還沒有學生紀錄，等待學生登入挑戰！</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return null;
+}
