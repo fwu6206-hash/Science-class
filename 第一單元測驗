@@ -8,7 +8,9 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
 let app, auth, db;
-if (firebaseConfig) {
+
+// 將您的 Firebase 金鑰包裝成正確的物件格式
+const myFirebaseConfig = {
   apiKey: "AIzaSyACDrk1dsuanGA_JndMLG3__behOQWtQsk",
   authDomain: "science-grade4.firebaseapp.com",
   projectId: "science-grade4",
@@ -17,6 +19,17 @@ if (firebaseConfig) {
   appId: "1:147212829664:web:39ea5b3afa4501ff036185"
 };
 
+// 選擇使用平台預設的設定，或是您貼上的設定
+const finalConfig = firebaseConfig || myFirebaseConfig;
+
+// 啟動 Firebase 連線
+try {
+  app = initializeApp(finalConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (error) {
+  console.error("Firebase 連線初始化失敗：", error);
+}
 
 // 活動 1：地表物質有什麼 (擴充題庫)
 const activity1Data = [
